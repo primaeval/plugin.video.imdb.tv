@@ -733,7 +733,6 @@ def name_page(url):
         })
 
     match = re.search('<a href="(.*?)">Next',html)
-    log(match)
     if match:
         next_page = "http://www.imdb.com" + match.group(1)
         items.append(
@@ -2150,7 +2149,6 @@ def browse(url):
             names = []
             for id in ids:
                 names.append(people.get(id,id).encode("utf8"))
-                log(names)
             v = ','.join(names)
         if v:
             values.append(v)
@@ -2432,8 +2430,7 @@ def update_tv():
     else:
         update_all = False
         period = "day"
-    update_all = True
-    period = "all"
+
     plugin.set_setting('update_tv_time', str(datetime.datetime.now()).split('.')[0])
 
     if update_all == False:
@@ -2463,7 +2460,6 @@ def update_tv():
 
 def update_tv_series(imdb_id):
     calendar = plugin.get_storage('calendar')
-    log(imdb_id)
     tvdb_id = get_tvdb_id(imdb_id)
     tvdb = plugin.get_storage('tvdb')
     tvdb[imdb_id] = tvdb_id
@@ -2473,17 +2469,14 @@ def update_tv_series(imdb_id):
     f.write(str.encode("utf8"))
     f.close()
     url = 'http://thetvdb.com/api/77DDC569F4547C45/series/%s/all/en.zip' % tvdb_id
-    log(url)
     results = requests.get(url)
     data = results.content
-    log(data)
     try:
         zip = zipfile.ZipFile(StringIO.StringIO(data))
         z = zip.open('en.xml')
         xml = z.read()
     except:
         return
-    log(xml)
     tv_past = plugin.get_setting('tv_past')
     since = None
     if tv_past == "0":
@@ -2559,7 +2552,6 @@ def calendar():
         context_items = []
         context_items.append(("[COLOR yellow]%s[/COLOR] " % 'Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
         #meta_url = "plugin://plugin.video.meta/tv/search_term/%s/1" % urllib.quote_plus(title)
-        #meta_url = "plugin://plugin.video.meta/tv/play_by_name/%s/%s/%s/%s)" % (title, season,episode, "en")
         if tvdb[imdbID]:
             meta_url = "plugin://plugin.video.meta/tv/play/%s/%s/%s/%s)" % (tvdb[imdbID], season,episode, "default")
         else:
@@ -2569,7 +2561,6 @@ def calendar():
         dt = datetime.datetime(int(year),int(month),int(day))
         now = datetime.datetime.now()
         today = datetime.datetime(now.year,now.month,now.day)
-        log((dt,today))
         if dt > today:
             colour = "blue"
         elif dt == today:
