@@ -18,6 +18,9 @@ import threading
 import HTMLParser
 import json
 import sys
+import zipfile
+import StringIO
+
 
 import SimpleDownloader as downloader
 
@@ -619,6 +622,16 @@ def log(v):
 
 #log(sys.argv)
 
+def get_tvdb_id(imdb_id):
+    tvdb_url = "http://thetvdb.com//api/GetSeriesByRemoteID.php?imdbid=%s" % imdb_id
+    r = requests.get(tvdb_url)
+    tvdb_html = r.text
+    tvdb_id = ''
+    tvdb_match = re.search(r'<seriesid>(.*?)</seriesid>', tvdb_html, flags=(re.DOTALL | re.MULTILINE))
+    if tvdb_match:
+        tvdb_id = tvdb_match.group(1)
+    return tvdb_id
+
 def get_icon_path(icon_name):
     if plugin.get_setting('user.icons') == "true":
         user_icon = "special://profile/addon_data/%s/icons/%s.png" % (addon_id(),icon_name)
@@ -738,6 +751,7 @@ def name_page(url):
 def title_page(url):
     global big_list_view
     big_list_view = True
+    favourites = plugin.get_storage('favourites')
     r = requests.get(url, headers=headers)
     html = r.content
     #html = HTMLParser.HTMLParser().unescape(html)
@@ -880,6 +894,10 @@ def title_page(url):
             item.add_stream_info('audio', {'codec': 'aac', 'language': 'en', 'channels': 2})
             context_items = []
             context_items.append(('Information', 'XBMC.Action(Info)'))
+            if imdbID in favourites:
+                context_items.append(('[COLOR yellow]Remove Favourite[/COLOR]', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
+            else:
+                context_items.append(('[COLOR yellow]Add Favourite[/COLOR]', 'XBMC.RunPlugin(%s)' % (plugin.url_for(add_favourite, imdbID=imdbID, title=title, thumbnail=img_url))))
             if info_type:
                 context_items.append(('Extended Info', "XBMC.RunScript(script.extendedinfo,info=%s,imdb_id=%s)" % (info_type,imdbID)))
             item.add_context_menu_items(context_items)
@@ -899,6 +917,43 @@ def title_page(url):
 
     return items
 
+@plugin.route('/favourites')
+def favourites():
+    favourites = plugin.get_storage('favourites')
+    thumbnails = plugin.get_storage('thumbnails')
+    items = []
+    for imdbID in sorted(favourites, key=lambda x: favourites[x]):
+        title = favourites[imdbID]
+        thumbnail = thumbnails[imdbID]
+        context_items = []
+        context_items.append(("[COLOR yellow]%s[/COLOR] " % 'Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
+        meta_url = "plugin://plugin.video.meta/tv/search_term/%s/1" % urllib.quote_plus(title)
+        items.append(
+        {
+            'label': title,
+            'path': meta_url,
+            'thumbnail': thumbnail,
+            'is_playable': False,
+            'context_menu': context_items,
+        })
+    return items
+
+
+@plugin.route('/add_favourite/<imdbID>/<title>/<thumbnail>')
+def add_favourite(imdbID,title,thumbnail):
+    favourites = plugin.get_storage('favourites')
+    favourites[imdbID] = title
+    thumbnails = plugin.get_storage('thumbnails')
+    thumbnails[imdbID] = thumbnail
+    add_to_library(imdbID,"series")
+    xbmc.executebuiltin('Container.Refresh')
+
+@plugin.route('/remove_favourite/<imdbID>')
+def remove_favourite(imdbID):
+    favourites = plugin.get_storage('favourites')
+    del favourites[imdbID]
+    delete_from_library(imdbID,"series")
+    xbmc.executebuiltin('Container.Refresh')
 
 @plugin.route('/feature')
 def feature():
@@ -2269,6 +2324,216 @@ def people_search():
 
     return items
 
+movieDict = {}
+showDict = {}
+def existInKodiLibrary(id, season="1", episode="1"):
+    global movieDict
+    global showDict
+    result = False
+    if 'tt' in id:
+        # Movies
+        if not movieDict:
+            query = {
+                'jsonrpc': '2.0',
+                'id': 0,
+                'method': 'VideoLibrary.GetMovies',
+                'params': {
+                    'properties': ['imdbnumber', 'file']
+                }
+            }
+            response = json.loads(xbmc.executeJSONRPC(json.dumps(query)))
+            movieDict = dict(
+                (movie['imdbnumber'], movie['file'])
+                for movie in response.get('result', {}).get('movies', [])
+            )
+        if movieDict.has_key(id):
+            result = True
+    else:
+        # TV Shows
+        if not showDict:
+            query = {
+                'jsonrpc': '2.0',
+                'id': 0,
+                'method': 'VideoLibrary.GetTVShows',
+                'params': {
+                    'properties': ['imdbnumber', 'file', 'season', 'episode']
+                }
+            }
+            response = json.loads(xbmc.executeJSONRPC(json.dumps(query)))
+            showDict = dict(
+                (show['imdbnumber'] + "-" + str(show['season']) + "-" + str(show['episode']), show['file'])
+                for show in response.get('result', {}).get('tvshows', [])
+            )
+        if showDict.has_key(id + "-" + str(season) + "-" + str(episode)):
+            result = True
+    return result
+
+@plugin.route('/add_to_library/<imdb_id>/<type>')
+def add_to_library(imdb_id,type):
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/Movies')
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/TV')
+    if type == "series":
+        try: xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/TV/%s' % imdb_id)
+        except: pass
+        update_tv_series(imdb_id)
+    else:
+        if plugin.get_setting('duplicates') == "false" and existInKodiLibrary(imdb_id):
+            pass
+        else:
+            f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.strm' % (imdb_id), "wb")
+            meta_url = 'plugin://plugin.video.meta/movies/play/imdb/%s/library' % imdb_id
+            f.write(meta_url.encode("utf8"))
+            f.close()
+            f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.nfo' % (imdb_id), "wb")
+            str = "http://www.imdb.com/title/%s/" % imdb_id
+            f.write(str.encode("utf8"))
+            f.close()
+
+@plugin.route('/delete_from_library/<imdb_id>/<type>')
+def delete_from_library(imdb_id,type):
+    if type == "series":
+        tv_dir = 'special://profile/addon_data/plugin.video.imdb.v/TV/%s' % imdb_id
+        dirs, files = xbmcvfs.listdir(tv_dir)
+        for file in files:
+            xbmcvfs.delete("%s/%s" % (tv_dir,file))
+        xbmcvfs.rmdir(dir)
+    else:
+        f = 'special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.strm' % (imdb_id)
+        xbmcvfs.delete(f)
+        f = 'special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.nfo' % (imdb_id)
+        xbmcvfs.delete(f)
+
+@plugin.route('/meta_tvdb/<imdb_id>/<title>')
+def meta_tvdb(imdb_id,title):
+    tvdb_id = get_tvdb_id(imdb_id)
+    meta_url = "plugin://plugin.video.meta/tv/tvdb/%s" % tvdb_id
+
+    item ={'label':title, 'path':meta_url, 'thumbnail': get_icon_path('meta')}
+    #TODO launch into Meta seasons view
+    return [item]
+
+@plugin.route('/update_tv')
+def update_tv():
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/Movies')
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/TV')
+    try:
+        last_run  = datetime.datetime.fromtimestamp(time.mktime(time.strptime(plugin.get_setting('update_tv_time').encode('utf-8', 'replace'), "%Y-%m-%d %H:%M:%S")))
+    except:
+        last_run = datetime.datetime(1970,1,1)
+    now = datetime.datetime.now()
+    next_day = last_run + datetime.timedelta(hours=24)
+    next_week = last_run + datetime.timedelta(days=7)
+    if now > next_week:
+        update_all = True
+        period = "all"
+    elif now > next_day:
+        update_all = False
+        period = "week"
+    else:
+        update_all = False
+        period = "day"
+    update_all = True
+    period = "all"
+    plugin.set_setting('update_tv_time', str(datetime.datetime.now()).split('.')[0])
+
+    if update_all == False:
+        url = 'http://thetvdb.com/api/77DDC569F4547C45/updates/updates_%s.zip' % period
+        results = requests.get(url)
+        data = results.content
+        try:
+            zip = zipfile.ZipFile(StringIO.StringIO(data))
+            z = zip.open('updates_%s.xml'  % period)
+            xml = z.read()
+        except:
+            return
+        match = re.compile(
+        '<Series><id>(.*?)</id><time>(.*?)</time></Series>',
+        flags=(re.DOTALL | re.MULTILINE)
+        ).findall(xml)
+        ids = [id[0] for id in match]
+    root = 'special://profile/addon_data/plugin.video.imdb.tv/TV'
+    dirs, files = xbmcvfs.listdir(root)
+    for imdb_id in dirs:
+        if update_all:
+            update_tv_series(imdb_id)
+        else:
+            if imdb_id in ids:
+                update_tv_series(imdb_id)
+
+
+def update_tv_series(imdb_id):
+    log(imdb_id)
+    tvdb_id = get_tvdb_id(imdb_id)
+    meta_url = "plugin://plugin.video.meta/tv/tvdb/%s" % tvdb_id
+    f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/TV/%s/tvshow.nfo' % imdb_id,"wb")
+    str = "http://thetvdb.com/index.php?tab=series&id=%s" % tvdb_id
+    f.write(str.encode("utf8"))
+    f.close()
+    url = 'http://thetvdb.com/api/77DDC569F4547C45/series/%s/all/en.zip' % tvdb_id
+    log(url)
+    results = requests.get(url)
+    data = results.content
+    log(data)
+    try:
+        zip = zipfile.ZipFile(StringIO.StringIO(data))
+        z = zip.open('en.xml')
+        xml = z.read()
+    except:
+        return
+    log(xml)
+    tv_past = plugin.get_setting('tv_past')
+    since = None
+    if tv_past == "0":
+        since = None
+    elif tv_past == "1":
+        since = timedelta(weeks=52)
+    elif tv_past == "2":
+        since = timedelta(weeks=4)
+    elif tv_past == "3":
+        since = timedelta(weeks=1)
+
+    match = re.compile(
+        '<Episode>.*?<id>(.*?)</id>.*?<EpisodeNumber>(.*?)</EpisodeNumber>.*?<FirstAired>(.*?)</FirstAired>.*?<SeasonNumber>(.*?)</SeasonNumber>.*?</Episode>',
+        flags=(re.DOTALL | re.MULTILINE)
+        ).findall(xml)
+    for id,episode,aired,season in match:
+        if aired:
+            match = re.search(r'([0-9]*?)-([0-9]*?)-([0-9]*)',aired)
+            if match:
+                year = match.group(1)
+                month = match.group(2)
+                day = match.group(3)
+                aired = datetime.datetime(year=int(year), month=int(month), day=int(day))
+                today = datetime.datetime.today()
+                if aired <= today:
+                    if not since or (aired > (today - since)):
+                        if plugin.get_setting('duplicates') == "false" and existInKodiLibrary(id,season,episode):
+                            pass
+                        else:
+                            f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/TV/%s/S%02dE%02d.strm' % (imdb_id,int(season),int(episode)),"wb")
+                            str = "plugin://plugin.video.meta/tv/play/%s/%d/%d/library" % (tvdb_id,int(season),int(episode))
+                            f.write(str.encode("utf8"))
+                            f.close()
+
+@plugin.route('/nuke')
+def nuke():
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/Movies')
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/TV')
+    dialog = xbmcgui.Dialog()
+    ok = dialog.yesno('Delete Library', 'Are you sure?')
+    if not ok:
+        return
+    for root in ['special://profile/addon_data/plugin.video.imdb.tv/TV','special://profile/addon_data/plugin.video.imdb.tv/Movies']:
+        root_dirs, root_files = xbmcvfs.listdir(root)
+        for root_dir in root_dirs:
+            dir = root+"/"+root_dir
+            dirs, files = xbmcvfs.listdir(dir)
+            for file in files:
+                xbmcvfs.delete("%s/%s" % (dir,file))
+            xbmcvfs.rmdir(dir)
+        for file in root_files:
+            xbmcvfs.delete("%s/%s" % (root,file))
+
 
 @plugin.route('/')
 def index():
@@ -2295,6 +2560,19 @@ def index():
         'path': plugin.url_for('browse', url="http://www.imdb.com/search/title?count=100&production_status=released&title_type=tv_series"),
         'thumbnail':get_icon_path('unknown'),
 
+    })
+    items.append(
+    {
+        'label': "Favourites",
+        'path': plugin.url_for('favourites'),
+        'thumbnail':get_icon_path('favourites'),
+
+    })
+    items.append(
+    {
+        'label': "Update TV Shows",
+        'path': plugin.url_for('update_tv'),
+        'thumbnail':get_icon_path('settings'),
     })
     '''
     items.append(
