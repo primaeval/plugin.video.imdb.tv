@@ -2628,7 +2628,7 @@ def index():
     {
         'label': "Calendar",
         'path': plugin.url_for('calendar'),
-        'thumbnail':get_icon_path('favourites'),
+        'thumbnail':get_icon_path('calendar'),
 
     })
     items.append(
