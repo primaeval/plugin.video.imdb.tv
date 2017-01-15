@@ -906,7 +906,7 @@ def title_page(url):
     pagination_match = re.findall('<a href="([^"]*?&ref_=adv_nxt)"', html, flags=(re.DOTALL | re.MULTILINE))
     if pagination_match:
         next_page = 'http://www.imdb.com/search/title?'+pagination_match[-1].strip('?')
-        log(next_page)
+        #log(next_page)
         items.append(
         {
             'label': "Next Page >>",
@@ -2412,6 +2412,8 @@ def meta_tvdb(imdb_id,title):
 
 @plugin.route('/update_tv')
 def update_tv():
+    calendar = plugin.get_storage('calendar')
+    calendar.clear()
     xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/Movies')
     xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/TV')
     try:
@@ -2461,6 +2463,7 @@ def update_tv():
 
 def update_tv_series(imdb_id):
     calendar = plugin.get_storage('calendar')
+    #calendar.clear()
     tvdb_id = get_tvdb_id(imdb_id)
     tvdb = plugin.get_storage('tvdb')
     tvdb[imdb_id] = tvdb_id
@@ -2494,6 +2497,7 @@ def update_tv_series(imdb_id):
         flags=(re.DOTALL | re.MULTILINE)
         ).findall(xml)
     for id,name,episode,aired,season in match:
+        #log((imdb_id,id,name,episode,aired,season))
         if aired:
             match = re.search(r'([0-9]*?)-([0-9]*?)-([0-9]*)',aired)
             if match:
@@ -2502,7 +2506,8 @@ def update_tv_series(imdb_id):
                 day = match.group(3)
                 aired = datetime.datetime(year=int(year), month=int(month), day=int(day))
                 today = datetime.datetime.today()
-                calendar[id] = "%s\t%s\t%s\t%s\t%s" % (imdb_id,aired,episode,season,name)
+                key = "%s\t%s\t%s\t%s\t%s" % (aired,imdb_id,episode,season,id)
+                calendar[key] = name
                 if aired <= today:
                     if not since or (aired > (today - since)):
                         if plugin.get_setting('duplicates') == "false" and existInKodiLibrary(id,season,episode):
@@ -2540,15 +2545,17 @@ def calendar():
     tvdb = plugin.get_storage('tvdb')
 
     cal = {}
-    for id in calendar:
-        imdb_id,aired,episode,season,name = calendar[id].split('\t')
-        cal[aired] = (imdb_id,id,episode,season,name)
+    for key in calendar:
+        (aired,imdb_id,episode,season,id) = key.split('\t')
+        name = calendar[key]
+        title = favourites[imdb_id]
+        cal[aired+title+season+episode] = (aired,title,imdb_id,id,episode,season,name)
 
     items = []
-    count = 10
-    for aired in sorted(cal,reverse=True):
-        (imdbID,id,episode,season,name) = cal[aired]
-        title = favourites[imdbID]
+    count = 1000
+    for key in sorted(cal,reverse=True):
+        (aired,title,imdbID,id,episode,season,name) = cal[key]
+        #title = favourites[imdbID]
         thumbnail = thumbnails[imdbID]
         context_items = []
         context_items.append(("[COLOR yellow]%s[/COLOR] " % 'Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
