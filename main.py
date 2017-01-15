@@ -2462,8 +2462,11 @@ def update_tv():
 
 
 def update_tv_series(imdb_id):
+    calendar = plugin.get_storage('calendar')
     log(imdb_id)
     tvdb_id = get_tvdb_id(imdb_id)
+    tvdb = plugin.get_storage('tvdb')
+    tvdb[imdb_id] = tvdb_id
     meta_url = "plugin://plugin.video.meta/tv/tvdb/%s" % tvdb_id
     f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/TV/%s/tvshow.nfo' % imdb_id,"wb")
     str = "http://thetvdb.com/index.php?tab=series&id=%s" % tvdb_id
@@ -2493,10 +2496,10 @@ def update_tv_series(imdb_id):
         since = timedelta(weeks=1)
 
     match = re.compile(
-        '<Episode>.*?<id>(.*?)</id>.*?<EpisodeNumber>(.*?)</EpisodeNumber>.*?<FirstAired>(.*?)</FirstAired>.*?<SeasonNumber>(.*?)</SeasonNumber>.*?</Episode>',
+        '<Episode>.*?<id>(.*?)</id>.*?<EpisodeName>(.*?)</EpisodeName>.*?<EpisodeNumber>(.*?)</EpisodeNumber>.*?<FirstAired>(.*?)</FirstAired>.*?<SeasonNumber>(.*?)</SeasonNumber>.*?</Episode>',
         flags=(re.DOTALL | re.MULTILINE)
         ).findall(xml)
-    for id,episode,aired,season in match:
+    for id,name,episode,aired,season in match:
         if aired:
             match = re.search(r'([0-9]*?)-([0-9]*?)-([0-9]*)',aired)
             if match:
@@ -2505,6 +2508,7 @@ def update_tv_series(imdb_id):
                 day = match.group(3)
                 aired = datetime.datetime(year=int(year), month=int(month), day=int(day))
                 today = datetime.datetime.today()
+                calendar[id] = "%s\t%s\t%s\t%s\t%s" % (imdb_id,aired,episode,season,name)
                 if aired <= today:
                     if not since or (aired > (today - since)):
                         if plugin.get_setting('duplicates') == "false" and existInKodiLibrary(id,season,episode):
@@ -2533,6 +2537,58 @@ def nuke():
             xbmcvfs.rmdir(dir)
         for file in root_files:
             xbmcvfs.delete("%s/%s" % (root,file))
+
+@plugin.route('/calendar')
+def calendar():
+    favourites = plugin.get_storage('favourites')
+    thumbnails = plugin.get_storage('thumbnails')
+    calendar = plugin.get_storage('calendar')
+    tvdb = plugin.get_storage('tvdb')
+
+    cal = {}
+    for id in calendar:
+        imdb_id,aired,episode,season,name = calendar[id].split('\t')
+        cal[aired] = (imdb_id,id,episode,season,name)
+
+    items = []
+    count = 10
+    for aired in sorted(cal,reverse=True):
+        (imdbID,id,episode,season,name) = cal[aired]
+        title = favourites[imdbID]
+        thumbnail = thumbnails[imdbID]
+        context_items = []
+        context_items.append(("[COLOR yellow]%s[/COLOR] " % 'Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
+        #meta_url = "plugin://plugin.video.meta/tv/search_term/%s/1" % urllib.quote_plus(title)
+        #meta_url = "plugin://plugin.video.meta/tv/play_by_name/%s/%s/%s/%s)" % (title, season,episode, "en")
+        if tvdb[imdbID]:
+            meta_url = "plugin://plugin.video.meta/tv/play/%s/%s/%s/%s)" % (tvdb[imdbID], season,episode, "default")
+        else:
+            meta_url = "plugin://plugin.video.meta/tv/play_by_name/%s/%s/%s/%s)" % (title, season,episode, "en")
+        date_time = aired.split(' ')
+        year,month,day = date_time[0].split('-')
+        dt = datetime.datetime(int(year),int(month),int(day))
+        now = datetime.datetime.now()
+        today = datetime.datetime(now.year,now.month,now.day)
+        log((dt,today))
+        if dt > today:
+            colour = "blue"
+        elif dt == today:
+            colour = "yellow"
+        else:
+            colour = "white"
+        label = "[COLOR %s]%s[/COLOR] %s S%sE%s %s" % (colour,date_time[0],title,season,episode,name)
+        items.append(
+        {
+            'label': label,
+            'path': meta_url,
+            'thumbnail': thumbnail,
+            'is_playable': False,
+            'context_menu': context_items,
+        })
+        count = count -1
+        if not count:
+            break
+    return items
 
 
 @plugin.route('/')
@@ -2565,6 +2621,13 @@ def index():
     {
         'label': "Favourites",
         'path': plugin.url_for('favourites'),
+        'thumbnail':get_icon_path('favourites'),
+
+    })
+    items.append(
+    {
+        'label': "Calendar",
+        'path': plugin.url_for('calendar'),
         'thumbnail':get_icon_path('favourites'),
 
     })
