@@ -2482,11 +2482,11 @@ def update_tv_series(imdb_id):
     if tv_past == "0":
         since = None
     elif tv_past == "1":
-        since = timedelta(weeks=52)
+        since = datetime.timedelta(weeks=52)
     elif tv_past == "2":
-        since = timedelta(weeks=4)
+        since = datetime.timedelta(weeks=4)
     elif tv_past == "3":
-        since = timedelta(weeks=1)
+        since = datetime.timedelta(weeks=1)
 
     match = re.compile(
         '<Episode>.*?<id>(.*?)</id>.*?<EpisodeName>(.*?)</EpisodeName>.*?<EpisodeNumber>(.*?)</EpisodeNumber>.*?<FirstAired>(.*?)</FirstAired>.*?<SeasonNumber>(.*?)</SeasonNumber>.*?</Episode>',
@@ -2582,6 +2582,14 @@ def calendar():
     return items
 
 
+@plugin.route('/UpdateLibrary')
+def UpdateLibrary():
+    xbmc.executebuiltin('UpdateLibrary(video)')
+
+@plugin.route('/CleanLibrary')
+def CleanLibrary():
+    xbmc.executebuiltin('CleanLibrary(video)')
+
 @plugin.route('/')
 def index():
     searches = plugin.get_storage('searches')
@@ -2626,6 +2634,24 @@ def index():
     {
         'label': "Update TV Shows",
         'path': plugin.url_for('update_tv'),
+        'thumbnail':get_icon_path('settings'),
+    })
+    items.append(
+    {
+        'label': "Delete Library",
+        'path': plugin.url_for('nuke'),
+        'thumbnail':get_icon_path('settings'),
+    })
+    items.append(
+    {
+        'label': "Update Kodi Video Library",
+        'path': plugin.url_for('UpdateLibrary'),
+        'thumbnail':get_icon_path('settings'),
+    })
+    items.append(
+    {
+        'label': "Clean Kodi Video Library",
+        'path': plugin.url_for('CleanLibrary'),
         'thumbnail':get_icon_path('settings'),
     })
     '''
