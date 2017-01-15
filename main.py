@@ -2430,6 +2430,7 @@ def update_tv():
     else:
         update_all = False
         period = "day"
+    update_all = True
 
     plugin.set_setting('update_tv_time', str(datetime.datetime.now()).split('.')[0])
 
