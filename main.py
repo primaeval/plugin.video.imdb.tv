@@ -871,14 +871,14 @@ def title_page(url):
             id = imdbID
             #log(title_type)
             if title_type == "tv_series" or title_type == "mini_series":
-                meta_url = "plugin://plugin.video.%s/tv/search_term/%s/1" % (plugin.get_setting('catchup'),urllib.quote_plus(title))
+                meta_url = "plugin://plugin.video.%s/tv/search_term/%s/1" % (plugin.get_setting('catchup').lower(),urllib.quote_plus(title))
             elif title_type == "tv_episode":
                 vlabel = "%s - %s" % (title, episode)
                 vlabel = urllib.quote_plus(vlabel.encode("utf8"))
                 meta_url = "plugin://plugin.video.imdb.search/?action=episode&imdb_id=%s&episode_id=%s&title=%s" % (imdbID,episode_id,vlabel) #TODO
                 id = episode_id
             else:
-                meta_url = 'plugin://plugin.video.%s/movies/play/imdb/%s/select' % (plugin.get_setting('catchup'),imdbID)
+                meta_url = 'plugin://plugin.video.%s/movies/play/imdb/%s/select' % (plugin.get_setting('catchup').lower(),imdbID)
             #log(meta_url)
         if imdbID:
             item = ListItem(label=title,thumbnail=img_url,path=meta_url)
@@ -926,7 +926,7 @@ def favourites():
         thumbnail = thumbnails[imdbID]
         context_items = []
         context_items.append(("[COLOR yellow]%s[/COLOR] " % 'Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
-        meta_url = "plugin://plugin.video.%s/tv/search_term/%s/1" % (plugin.get_setting('catchup'),urllib.quote_plus(title))
+        meta_url = "plugin://plugin.video.%s/tv/search_term/%s/1" % (plugin.get_setting('catchup').lower(),urllib.quote_plus(title))
         items.append(
         {
             'label': title,
@@ -2379,7 +2379,7 @@ def add_to_library(imdb_id,type):
             pass
         else:
             f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.strm' % (imdb_id), "wb")
-            meta_url = 'plugin://plugin.video.%s/movies/play/imdb/%s/library' % (plugin.get_setting('catchup'),imdb_id)
+            meta_url = 'plugin://plugin.video.%s/movies/play/imdb/%s/library' % (plugin.get_setting('catchup').lower(),imdb_id)
             f.write(meta_url.encode("utf8"))
             f.close()
             f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.nfo' % (imdb_id), "wb")
@@ -2404,7 +2404,7 @@ def delete_from_library(imdb_id,type):
 @plugin.route('/meta_tvdb/<imdb_id>/<title>')
 def meta_tvdb(imdb_id,title):
     tvdb_id = get_tvdb_id(imdb_id)
-    meta_url = "plugin://plugin.video.%s/tv/tvdb/%s" % (plugin.get_setting('catchup'),tvdb_id)
+    meta_url = "plugin://plugin.video.%s/tv/tvdb/%s" % (plugin.get_setting('catchup').lower(),tvdb_id)
 
     item ={'label':title, 'path':meta_url, 'thumbnail': get_icon_path('meta')}
     #TODO launch into Meta seasons view
@@ -2467,7 +2467,7 @@ def update_tv_series(imdb_id):
     tvdb_id = get_tvdb_id(imdb_id)
     tvdb = plugin.get_storage('tvdb')
     tvdb[imdb_id] = tvdb_id
-    meta_url = "plugin://plugin.video.%s/tv/tvdb/%s" % (plugin.get_setting('catchup'),tvdb_id)
+    meta_url = "plugin://plugin.video.%s/tv/tvdb/%s" % (plugin.get_setting('catchup').lower(),tvdb_id)
     f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/TV/%s/tvshow.nfo' % imdb_id,"wb")
     str = "http://thetvdb.com/index.php?tab=series&id=%s" % tvdb_id
     f.write(str.encode("utf8"))
@@ -2514,7 +2514,7 @@ def update_tv_series(imdb_id):
                             pass
                         else:
                             f = xbmcvfs.File('special://profile/addon_data/plugin.video.imdb.tv/TV/%s/S%02dE%02d.strm' % (imdb_id,int(season),int(episode)),"wb")
-                            str = "plugin://plugin.video.%s/tv/play/%s/%d/%d/library" % (plugin.get_setting('catchup'),tvdb_id,int(season),int(episode))
+                            str = "plugin://plugin.video.%s/tv/play/%s/%d/%d/library" % (plugin.get_setting('catchup').lower(),tvdb_id,int(season),int(episode))
                             f.write(str.encode("utf8"))
                             f.close()
 
@@ -2559,11 +2559,11 @@ def calendar():
         thumbnail = thumbnails[imdbID]
         context_items = []
         context_items.append(("[COLOR yellow]%s[/COLOR] " % 'Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for(remove_favourite, imdbID=imdbID))))
-        #meta_url = "plugin://plugin.video.%s/tv/search_term/%s/1" % (plugin.get_setting('catchup'),urllib.quote_plus(title))
+        #meta_url = "plugin://plugin.video.%s/tv/search_term/%s/1" % (plugin.get_setting('catchup').lower(),urllib.quote_plus(title))
         if tvdb[imdbID]:
-            meta_url = "plugin://plugin.video.%s/tv/play/%s/%s/%s/%s)" % (plugin.get_setting('catchup'),tvdb[imdbID], season,episode, "default")
+            meta_url = "plugin://plugin.video.%s/tv/play/%s/%s/%s/%s)" % (plugin.get_setting('catchup').lower(),tvdb[imdbID], season,episode, "default")
         else:
-            meta_url = "plugin://plugin.video.%s/tv/play_by_name/%s/%s/%s/%s)" % (plugin.get_setting('catchup'),title, season,episode, "en")
+            meta_url = "plugin://plugin.video.%s/tv/play_by_name/%s/%s/%s/%s)" % (plugin.get_setting('catchup').lower(),title, season,episode, "en")
         date_time = aired.split(' ')
         year,month,day = date_time[0].split('-')
         dt = datetime.datetime(int(year),int(month),int(day))
