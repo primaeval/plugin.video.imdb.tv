@@ -35,7 +35,7 @@ class AutoUpdater:
         time.sleep(1)
         if update_TV():
             xbmc.log('[IMDb TV] Updating TV', level=xbmc.LOGNOTICE)
-            xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.tv/update_TV)')
+            xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.tv/update_tv)')
         if update_tv():
             xbmc.log('[IMDb TV] Updating TV Shows', level=xbmc.LOGNOTICE)
             xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.tv/update_tv)')

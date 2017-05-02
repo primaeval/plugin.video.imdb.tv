@@ -2365,12 +2365,14 @@ def add_to_library(imdb_id,type):
 
 @plugin.route('/delete_from_library/<imdb_id>/<type>')
 def delete_from_library(imdb_id,type):
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/Movies')
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.tv/TV')
     if type == "series":
-        tv_dir = 'special://profile/addon_data/plugin.video.imdb.v/TV/%s' % imdb_id
+        tv_dir = 'special://profile/addon_data/plugin.video.imdb.tv/TV/%s' % imdb_id
         dirs, files = xbmcvfs.listdir(tv_dir)
         for file in files:
             xbmcvfs.delete("%s/%s" % (tv_dir,file))
-        xbmcvfs.rmdir(dir)
+        xbmcvfs.rmdir(tv_dir)
     else:
         f = 'special://profile/addon_data/plugin.video.imdb.tv/Movies/%s.strm' % (imdb_id)
         xbmcvfs.delete(f)
@@ -2524,8 +2526,9 @@ def calendar():
     for key in calendar:
         (aired,imdb_id,episode,season,id) = key.split('\t')
         name = calendar[key]
-        title = favourites[imdb_id]
-        cal[aired+title+season+episode] = (aired,title,imdb_id,id,episode,season,name)
+        title = favourites.get(imdb_id)
+        if title:
+            cal[aired+title+season+episode] = (aired,title,imdb_id,id,episode,season,name)
 
     items = []
     count = 1000
@@ -2576,6 +2579,346 @@ def UpdateLibrary():
 @plugin.route('/CleanLibrary')
 def CleanLibrary():
     xbmc.executebuiltin('CleanLibrary(video)')
+
+@plugin.route('/add_watchlist')
+def add_watchlist():
+    dialog = xbmcgui.Dialog()
+    url = dialog.input('Enter Watchlist Url', type=xbmcgui.INPUT_ALPHANUM)
+    if url:
+        if url.startswith('ur'):
+            url = "http://www.imdb.com/user/%s/watchlist" % url
+        elif url.startswith('ls'):
+            url = "http://www.imdb.com/list/%s" % url
+        elif 'list/ls' in url:
+            match = re.search(r'/(ls[0-9]*)',url)
+            ls = match.group(1)
+            url = "http://www.imdb.com/list/%s" % (ls)
+        elif 'user/ur' in url:
+            match = re.search(r'/(ur[0-9]*)',url)
+            ur = match.group(1)
+            url = "http://www.imdb.com/user/%s/watchlist" % (ur)
+        r = requests.get(url)
+        html = r.text
+        name = ''
+        match = re.search(r'<title>([^\[]*?)</title>', html)
+        if match:
+            name = match.group(1)
+            if name.startswith("IMDb: "):
+                name = name[6:]
+            if name.endswith(" - IMDb"):
+                name = name[:-7]
+        name = dialog.input('Enter Watchlist Name', name, type=xbmcgui.INPUT_ALPHANUM)
+        if name:
+            watchlists = plugin.get_storage('watchlists')
+            watchlists[name] = url
+
+@plugin.route('/watchlist/<url>/<type>/<export>')
+def watchlist(url,type,export):
+    big_list_view = True
+    r = requests.get(url, headers=headers)
+    html = r.text
+
+    match = re.search(r'IMDbReactInitialState\.push\(({.*?})\);',html)
+    if match:
+        data = match.group(1)
+        imdb = json.loads(data)
+        imdb_list = imdb['list']
+        imdb_items = imdb_list['items']
+        imdb_ids = imdb['titles']
+        all = [i['const'] for i in imdb_items]
+        got = [i for i in imdb_ids]
+        missing = set(all) - set(got)
+        if missing:
+            ids = list(missing)
+            url = 'http://www.imdb.com/title/data?ids=%s' % ','.join(ids)
+            r = requests.get(url, headers=headers)
+            html = r.text
+            imdb = json.loads(html)
+            for imdb_id in imdb:
+               imdb_ids[imdb_id] = imdb[imdb_id]['title']
+        return list_titles(imdb_ids,all,type,export)
+
+def list_titles(imdb_ids,order,list_type,export):
+    data = {}
+    for imdb_id in order:
+        temp_data = {}
+        imdb_data = imdb_ids[imdb_id]
+        temp_data['title'] = '-'
+        temp_data['year'] = ''
+        try:
+            primary = imdb_data['primary']
+            temp_data['title'] = primary['title']
+            temp_data['year'] = primary['year'][0]
+        except:
+            pass
+        temp_data['type'] = ''
+        try:
+            temp_data['type'] = imdb_data['type']
+        except:
+            pass
+        temp_data['plot'] = ''
+        try:
+            plot = imdb_data['plot']
+            temp_data['plot'] = HTMLParser.HTMLParser().unescape(plot.decode('utf-8'))
+        except:
+            pass
+        temp_data['cast'] = []
+        try:
+            credits = imdb_data['credits']
+            director = credits['director']
+            temp_data['cast'].append(director[0]['name'])
+        except:
+            pass
+        try:
+            credits = imdb_data['credits']
+            stars = credits['star']
+            for star in stars:
+                temp_data['cast'].append(star['name'])
+        except:
+            pass
+        temp_data['thumbnail'] = 'DefaultFolder.png'
+        try:
+            poster = imdb_data['poster']
+            temp_data['thumbnail'] = poster['url']
+        except:
+            pass
+        temp_data['rating'] = ''
+        temp_data['votes'] = ''
+        try:
+            ratings = imdb_data['ratings']
+            temp_data['rating'] = ratings['rating']
+            temp_data['votes'] = ratings['votes']
+        except:
+            pass
+        temp_data['genres'] = []
+        temp_data['certificate'] = '-'
+        temp_data['runtime'] = ''
+        try:
+            metadata = imdb_data['metadata']
+            temp_data['genres'] = metadata['genres']
+            temp_data['certificate'] = metadata['certificate']
+            temp_data['runtime'] = metadata['runtime']
+        except:
+            pass
+        data[imdb_id] = temp_data
+
+    return make_list(data,order,list_type,export)
+
+
+
+def make_list(imdb_ids,order,list_type,export):
+    if export == "True":
+        xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.watchlists/Movies')
+        xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.watchlists/TV')
+    items = []
+    for imdb_id in order:
+        if plugin.get_setting('hide_duplicates') == "true" and existInKodiLibrary(imdb_id):
+            continue
+        imdb_data = imdb_ids[imdb_id]
+        title = imdb_data['title']
+        year = imdb_data['year']
+        type = imdb_data['type']
+        plot = imdb_data['plot']
+        cast = imdb_data['cast']
+        thumbnail = imdb_data['thumbnail']
+        rating = imdb_data['rating']
+        votes = imdb_data['votes']
+        genres = imdb_data['genres']
+        certificate = imdb_data['certificate']
+        runtime = imdb_data['runtime']
+
+        meta_url = ''
+        if type == "series": #TODO episode
+            meta_url = "plugin://plugin.video.imdb.watchlists/meta_tvdb/%s/%s" % (imdb_id,urllib.quote_plus(title.encode("utf8")))
+        elif type == "featureFilm":
+            meta_url = 'plugin://%s/movies/play/imdb/%s/library' % (plugin.get_setting('catchup.plugin').lower(),imdb_id)
+        context_items = []
+        try:
+            if xbmcaddon.Addon('plugin.program.super.favourites'):
+                context_items.append(
+                ('iSearch', 'ActivateWindow(%d,"plugin://%s/?mode=%d&keyword=%s",return)' % (10025,'plugin.program.super.favourites', 0, urllib.quote_plus(title))))
+        except:
+            pass
+        context_items.append(
+        ('Add Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for('add_favourite', imdbID=imdb_id, title=title, thumbnail=thumbnail))))
+        context_items.append(
+        ('Remove Favourite', 'XBMC.RunPlugin(%s)' % (plugin.url_for('remove_favourite', imdbID=imdb_id))))
+        #context_items.append(
+        #('Add to Library', 'XBMC.RunPlugin(%s)' % (plugin.url_for('add_to_library', imdb_id=imdb_id, type=type))))
+        #context_items.append(
+        #('Delete from Library', 'XBMC.RunPlugin(%s)' % (plugin.url_for('delete_from_library', imdb_id=imdb_id, type=type))))
+        try:
+            if type == 'featureFilm' and xbmcaddon.Addon('plugin.video.couchpotato_manager'):
+                context_items.append(
+                ('Add to Couch Potato', "XBMC.RunPlugin(plugin://plugin.video.couchpotato_manager/movies/add-by-id/%s)" % (imdb_id)))
+        except:
+            pass
+        try:
+            if type == 'series' and xbmcaddon.Addon('plugin.video.sickrage'):
+                context_items.append(
+                ('Add to Sickrage', "XBMC.RunPlugin(plugin://plugin.video.sickrage?action=addshow&&show_name=%s)" % (urllib.quote_plus(title.encode("utf8")))))
+        except:
+            pass
+
+        item = {
+            'label': title,
+            'path': meta_url,
+            'thumbnail': thumbnail,
+            'info': {'title': title, 'genre': ','.join(genres),'code': imdb_id,
+            'year':year,'rating':rating,'plot': plot,
+            'mpaa': certificate,'cast': cast,'duration': runtime, 'votes': votes},
+            'context_menu': context_items,
+            'replace_context_menu': False,
+        }
+        if list_type == "tv":
+            if type == "series": #TODO episode
+                items.append(item)
+        elif list_type == "movies":
+            if type == "featureFilm":
+                items.append(item)
+        else:
+            items.append(item)
+
+        if export == "True":
+            add_to_library(imdb_id, type)
+
+    plugin.set_content('movies')
+    plugin.add_sort_method(xbmcplugin.SORT_METHOD_UNSORTED)
+    plugin.add_sort_method(xbmcplugin.SORT_METHOD_TITLE)
+    return items
+
+@plugin.route('/select_watchlists/')
+def select_watchlists():
+    watchlists = plugin.get_storage('watchlists')
+    names = sorted([w for w in watchlists])
+    dialog = xbmcgui.Dialog()
+    ret = dialog.multiselect('Select Watchlists To Subscribe To', names)
+    if ret is None:
+        return
+    if not ret:
+        ret = []
+    library_watchlists = plugin.get_storage('library_watchlists')
+    library_watchlists.clear()
+    for i in ret:
+        library_watchlists[names[i]] = watchlists[names[i]]
+
+
+@plugin.route('/remove_watchlist_dialog/')
+def remove_watchlist_dialog():
+    watchlists = plugin.get_storage('watchlists')
+    names = sorted([w for w in watchlists])
+    dialog = xbmcgui.Dialog()
+    index = dialog.select('Select Watchlist to Remove', names)
+    if index >= 0:
+        name = names[index]
+        remove_watchlist(name)
+
+@plugin.route('/subscribe_watchlist/<watchlist>')
+def subscribe_watchlist(watchlist):
+    watchlists = plugin.get_storage('watchlists')
+    library_watchlists = plugin.get_storage('library_watchlists')
+    library_watchlists[watchlist] = watchlists[watchlist]
+    xbmc.executebuiltin('Container.Refresh')
+
+@plugin.route('/unsubscribe_watchlist/<watchlist>')
+def unsubscribe_watchlist(watchlist):
+    library_watchlists = plugin.get_storage('library_watchlists')
+    del library_watchlists[watchlist]
+    xbmc.executebuiltin('Container.Refresh')
+
+@plugin.route('/remove_watchlist/<watchlist>')
+def remove_watchlist(watchlist):
+    watchlists = plugin.get_storage('watchlists')
+    del watchlists[watchlist]
+    xbmc.executebuiltin('Container.Refresh')
+
+@plugin.route('/update_watchlists')
+def update_watchlists():
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.watchlists/Movies')
+    xbmcvfs.mkdirs('special://profile/addon_data/plugin.video.imdb.watchlists/TV')
+    watchlists = plugin.get_storage('library_watchlists')
+    for w in sorted(watchlists):
+        url = watchlists[w]
+        if 'list/ls' in watchlists[w]:
+            while url:
+                (url, items) = ls_list(url,'all',"True")
+                if not items:
+                    break
+        else:
+            watchlist(url,'all',"True")
+
+    items.append(
+    {
+        'label': "TV",
+        'path': plugin.url_for('category', type="tv"),
+        'thumbnail':get_icon_path('tv'),
+        'context_menu': context_items,
+    })
+
+@plugin.route('/category/<type>')
+def category(type):
+    main_context_items = []
+    items = []
+    if type == "all":
+        icon = "favourites"
+    elif type == "movies":
+        icon = "movies"
+    else:
+        icon = "tv"
+    watchlists = plugin.get_storage('watchlists')
+    library_watchlists = plugin.get_storage('library_watchlists')
+    w = [w for w in watchlists]
+    if len(w) == 0:
+        items.append(
+        {
+            'label': "Add Watchlist",
+            'path': plugin.url_for('add_watchlist'),
+            'thumbnail':get_icon_path('settings'),
+        })
+        return items
+
+    #"Default|A-Z|User Rating|Your Rating|Popularity|Votes|Release Date|Date Added"
+    ur_sort = ['list_order','alpha','user_rating','your_rating','moviemeter','num_votes','release_date','date_added']
+    ur_order = ['asc','desc']
+    ls_sort = ['listorian','title','user_rating','your_ratings','moviemeter','num_votes','release_date_us','created']
+    ls_order = ['asc','desc']
+    for watchlist in sorted(watchlists):
+        url=watchlists[watchlist]
+        if 'list/ls' in url:
+            route = "ls_list"
+            sort = plugin.get_setting('sort')
+            order = plugin.get_setting('order')
+            if sort:
+                match = re.search(r'/(ls[0-9]*)',url)
+                ls = match.group(1)
+                url = "http://www.imdb.com/list/%s/?sort=%s:%s" % (ls,ls_sort[int(sort)],ls_order[int(order)])
+        else:
+            route = 'watchlist'
+            sort = plugin.get_setting('sort')
+            order = plugin.get_setting('order')
+            if sort:
+                match = re.search(r'/(ur[0-9]*)',url)
+                ur = match.group(1)
+                url = "http://www.imdb.com/user/%s/watchlist?sort=%s%%2C%s" % (ur,ur_sort[int(sort)],ur_order[int(order)])
+        context_items = []
+        context_items.append(
+        ('Add to Library', 'XBMC.RunPlugin(%s)' % (plugin.url_for(route, url=url, type=type, export=True))))
+        context_items.append(('Remove Watchlist', 'XBMC.RunPlugin(%s)' % (plugin.url_for('remove_watchlist', watchlist=watchlist))))
+        context_items = context_items + main_context_items
+        if watchlist in library_watchlists:
+            label = "%s (subscribed)" % watchlist
+            context_items.append(('Unsubscribe', 'XBMC.RunPlugin(%s)' % (plugin.url_for(unsubscribe_watchlist, watchlist=watchlist))))
+        else:
+            label = watchlist
+            context_items.append(('Subscribe', 'XBMC.RunPlugin(%s)' % (plugin.url_for(subscribe_watchlist, watchlist=watchlist))))
+        items.append(
+        {
+            'label': label,
+            'path': plugin.url_for(route, url=url, type=type, export=False),
+            'thumbnail':get_icon_path(icon),
+            'context_menu': context_items,
+        })
+    return items
 
 @plugin.route('/')
 def index():
@@ -2656,6 +2999,24 @@ def index():
         'path': plugin.url_for('add_search'),
         'thumbnail':get_icon_path('settings'),
 
+    })
+    items.append(
+    {
+        'label': "Add Watchlist",
+        'path': plugin.url_for('add_watchlist'),
+        'thumbnail':get_icon_path('settings'),
+    })
+    items.append(
+    {
+        'label': "Remove Watchlist",
+        'path': plugin.url_for('remove_watchlist_dialog'),
+        'thumbnail':get_icon_path('settings'),
+    })
+    items.append(
+    {
+        'label': "Watchlists",
+        'path': plugin.url_for('category', type="tv"),
+        'thumbnail':get_icon_path('tv'),
     })
     if plugin.get_setting('export') == 'true':
         items.append(
