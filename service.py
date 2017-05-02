@@ -4,7 +4,7 @@ import xbmcaddon
 
 from datetime import date, timedelta
 
-ADDON = xbmcaddon.Addon(id='plugin.video.imdb.watchlists')
+ADDON = xbmcaddon.Addon(id='plugin.video.imdb.tv')
 
 def subscription_update():
     if ADDON.getSetting('subscription_update') == "true":
@@ -18,8 +18,8 @@ def update_tv():
     else:
         return False
 
-def update_watchlists():
-    if ADDON.getSetting('update_watchlists') == "true":
+def update_TV():
+    if ADDON.getSetting('update_TV') == "true":
         return True
     else:
         return False
@@ -31,23 +31,23 @@ class AutoUpdater:
     def update(self):
         hours_list = [2, 5, 10, 15, 24]
         hours = hours_list[subscription_timer()]
-        xbmc.log('[IMDb Watchlists] Updating', level=xbmc.LOGNOTICE)
+        xbmc.log('[IMDb TV] Updating', level=xbmc.LOGNOTICE)
         time.sleep(1)
-        if update_watchlists():
-            xbmc.log('[IMDb Watchlists] Updating Watchlists', level=xbmc.LOGNOTICE)
-            xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.watchlists/update_watchlists)')
+        if update_TV():
+            xbmc.log('[IMDb TV] Updating TV', level=xbmc.LOGNOTICE)
+            xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.tv/update_TV)')
         if update_tv():
-            xbmc.log('[IMDb Watchlists] Updating TV Shows', level=xbmc.LOGNOTICE)
-            xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.watchlists/update_tv)')
+            xbmc.log('[IMDb TV] Updating TV Shows', level=xbmc.LOGNOTICE)
+            xbmc.executebuiltin('RunPlugin(plugin://plugin.video.imdb.tv/update_tv)')
         now = datetime.datetime.now()
         ADDON.setSetting('service_time', str(now + timedelta(hours=hours)).split('.')[0])
-        xbmc.log("[IMDb Watchlists] Library updated. Next run at " + ADDON.getSetting('service_time'), level=xbmc.LOGNOTICE)
+        xbmc.log("[IMDb TV] Library updated. Next run at " + ADDON.getSetting('service_time'), level=xbmc.LOGNOTICE)
         if ADDON.getSetting('update_main') == "true":
             while (xbmc.getCondVisibility('Library.IsScanningVideo') == True):
                 time.sleep(1)
                 if xbmc.abortRequested:
                     return
-            xbmc.log('[IMDb Watchlists] Updating Kodi Library', level=xbmc.LOGNOTICE)
+            xbmc.log('[IMDb TV] Updating Kodi Library', level=xbmc.LOGNOTICE)
             xbmc.executebuiltin('UpdateLibrary(video)')
         if ADDON.getSetting('update_clean') == "true":
             time.sleep(1)
@@ -55,7 +55,7 @@ class AutoUpdater:
                 time.sleep(1)
                 if xbmc.abortRequested:
                     return
-            xbmc.log('[IMDb Watchlists] Cleaning Kodi Library', level=xbmc.LOGNOTICE)
+            xbmc.log('[IMDb TV] Cleaning Kodi Library', level=xbmc.LOGNOTICE)
             xbmc.executebuiltin('CleanLibrary(video)')
 
     def runProgram(self):
@@ -71,10 +71,10 @@ class AutoUpdater:
                     if now > next_run:
                         self.update()
                 except Exception as detail:
-                    xbmc.log("[IMDb Watchlists] Update Exception %s" % detail, level=xbmc.LOGERROR)
+                    xbmc.log("[IMDb TV] Update Exception %s" % detail, level=xbmc.LOGERROR)
                     pass
             time.sleep(1)
 
 
-xbmc.log("[IMDb Watchlists] Subscription service starting...", level=xbmc.LOGNOTICE)
+xbmc.log("[IMDb TV] Subscription service starting...", level=xbmc.LOGNOTICE)
 AutoUpdater().runProgram()
