@@ -22,9 +22,6 @@ import zipfile
 import StringIO
 
 
-import SimpleDownloader as downloader
-
-
 plugin = Plugin()
 big_list_view = False
 
@@ -673,28 +670,7 @@ def save_people(people):
     f.write(s)
     f.close()
 
-@plugin.route('/download/<name>/<url>')
-def download(name,url):
-    downloads = plugin.get_storage('downloads')
-    downloads[name] = url
-    dl = downloader.SimpleDownloader()
-    params = { "url": url, "download_path": plugin.get_setting('download') }
-    dl.download(name, params)
 
-@plugin.route('/stop_downloads')
-def stop_downloads():
-    downloads = plugin.get_storage('downloads')
-    dl = downloader.SimpleDownloader()
-    dl._stopCurrentDownload()
-    #log(dl._getQueue())
-    for name in downloads.keys():
-        dl._removeItemFromQueue(name)
-        del downloads[name]
-
-@plugin.route('/start_downloads')
-def start_downloads():
-    dl = downloader.SimpleDownloader()
-    dl._processQueue()
 
 @plugin.route('/play/<url>')
 def play(url):
@@ -2575,7 +2551,10 @@ def calendar():
             colour = "yellow"
         else:
             colour = "white"
-        label = "[COLOR %s]%s[/COLOR] %s S%sE%s %s" % (colour,date_time[0],title,season,episode,name)
+        if plugin.get_setting('date') == 'true':
+            label = "[COLOR %s]%s[/COLOR] %s S%sE%s %s" % (colour,date_time[0],title,season,episode,name)
+        else:
+            label = "[COLOR %s]%s S%sE%s %s[/COLOR]" % (colour,title,season,episode,name)
         items.append(
         {
             'label': label,
